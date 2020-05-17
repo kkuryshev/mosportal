@@ -3,7 +3,7 @@ from distutils.core import setup
 setup(
     name='mosportal',
     packages=['mosportal'],
-    version='0.1.4',
+    version='0.1.5',
     license='MIT',
     description='api для работы с порталом москвы',
     author='@kkuryshev',
