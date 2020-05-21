@@ -6,10 +6,14 @@ from json import JSONDecodeError
 import json
 import re
 from os.path import join,exists
-
+import http.client
 
 logger = logging.getLogger(__name__)
 
+if logger.getEffectiveLevel() == 10: #DEBUG
+    http_client = logging.getLogger('urllib3.connectionpool')
+    http_client.setLevel(logging.INFO)
+    http.client.HTTPConnection.debuglevel = 1
 
 class SessionException(BaseException):
     pass
@@ -37,9 +41,12 @@ class Session(ReqSession):
             logger.debug('попытка чистой авторизации (без сохраненных куки)...')
             resp = session. get('https://www.mos.ru/api/acs/v1/login?back_url=https%3A%2F%2Fwww.mos.ru%2F')
             js = re.search(r'<script charset=\"utf-8\" src=\"(.+?)\"><\/script>', str(resp.content)).group(1)
+            logger.debug(f'получили код {js}')
             resp = session.get(f'https://login.mos.ru{js}')
             js = re.search(r'COORDS:\"/(.+?)\"', str(resp.content)).group(1)
+            logger.debug(f'получили COORDS {js}')
             session.post(f'https://login.mos.ru/{js}')
+            logger.debug(f'переходим к аутентификации')
             resp = session.post(
                 url="https://login.mos.ru/sps/login/methods/password",
                 headers={
@@ -59,6 +66,7 @@ class Session(ReqSession):
                 },
                 allow_redirects=False
             )
+            logger.debug(f"переходим на адрес, который вернул запрос аутентификации {resp.headers.get('location')}")
             session.get(
                 resp.headers.get('location'),
                 headers={
@@ -70,6 +78,10 @@ class Session(ReqSession):
                 }
             )
             self.__save()
+            if not self.authenticated():
+                raise SessionException('аутентификация прошла успешно но сессия осталась не валидной')
+
+            logger.debug("авторизация на портале Москвы прошла успешно!")
         except BaseHTTPError as e:
             raise SessionException(f'ошибка авторизации на портале Москвы: {e}')
 
