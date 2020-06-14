@@ -1,19 +1,14 @@
 import logging
 from requests import Session as ReqSession
-from requests.utils import dict_from_cookiejar,cookiejar_from_dict
+from requests.utils import dict_from_cookiejar, cookiejar_from_dict
 from requests.exceptions import BaseHTTPError
 from json import JSONDecodeError
 import json
 import re
-from os.path import join,exists
-import http.client
+from os.path import join, exists
 
 logger = logging.getLogger(__name__)
 
-if logger.getEffectiveLevel() == 10: #DEBUG
-    http_client = logging.getLogger('urllib3.connectionpool')
-    http_client.setLevel(logging.INFO)
-    http.client.HTTPConnection.debuglevel = 1
 
 class SessionException(BaseException):
     pass
@@ -24,22 +19,24 @@ class InvalidSession(SessionException):
 
 
 class Session(ReqSession):
-    def __init__(self, login, password,**kwargs):
+    def __init__(self, login, password, **kwargs):
         self.login = login
         self.password = password
-        self.cookie_save_path = kwargs.get('cookie_save_path',None)
+        self.cookie_save_path = kwargs.get('cookie_save_path', None)
         self.token = None
         self.id_profile = None
-        
+        self.__init_est = False
+
         super(Session, self).__init__()
 
     def __establish(self) -> None:
         try:
             if self.authenticated():
+                self.__init_est = True
                 return
             session = super(Session, self)
             logger.debug('попытка чистой авторизации (без сохраненных куки)...')
-            resp = session. get('https://www.mos.ru/api/acs/v1/login?back_url=https%3A%2F%2Fwww.mos.ru%2F')
+            resp = session.get('https://www.mos.ru/api/acs/v1/login?back_url=https%3A%2F%2Fwww.mos.ru%2F')
             js = re.search(r'<script charset=\"utf-8\" src=\"(.+?)\"><\/script>', str(resp.content)).group(1)
             logger.debug(f'получили код {js}')
             resp = session.get(f'https://login.mos.ru{js}')
@@ -80,12 +77,15 @@ class Session(ReqSession):
             self.__save()
             if not self.authenticated():
                 raise SessionException('аутентификация прошла успешно но сессия осталась не валидной')
-
+            self.__init_est = True
             logger.debug("авторизация на портале Москвы прошла успешно!")
         except BaseHTTPError as e:
             raise SessionException(f'ошибка авторизации на портале Москвы: {e}')
 
     def post(self, url, data=None, **kwargs):
+        if not self.__init_est:
+            self.__establish()
+
         resp = None
         for item in range(2):
             resp = super(Session, self).post(
@@ -99,15 +99,21 @@ class Session(ReqSession):
                 break
 
             self.__establish()
+        return self.extract_json(resp)
 
+    @staticmethod
+    def extract_json(resp):
         try:
             return resp.json()
         except JSONDecodeError as e:
             raise SessionException(f'получен не корректный ответ от портала {e}')
 
     def get(self, url, **kwargs):
+        if not self.__init_est:
+            self.__establish()
+
         for item in range(2):
-            resp = super(Session, self).get(url,**kwargs)
+            resp = super(Session, self).get(url, **kwargs)
             if resp.status_code == 200 and 'login' not in resp.url:
                 return resp
 
@@ -125,7 +131,7 @@ class Session(ReqSession):
         )
         if response.status_code != 200:
             return
-        if not response.headers.get('x-session-fingerprint',None):
+        if not response.headers.get('x-session-fingerprint', None):
             return
 
         return True
@@ -134,15 +140,15 @@ class Session(ReqSession):
     def cookiejar_file(self):
         if not self.cookie_save_path:
             return
-        return join(self.cookie_save_path,'.mosportal_cookie')
+        return join(self.cookie_save_path, '.mosportal_cookie')
 
     def __save(self):
         if not self.cookiejar_file:
             return
         try:
-            with open(self.cookiejar_file,'w') as f:
+            with open(self.cookiejar_file, 'w') as f:
                 f.write(json.dumps(dict_from_cookiejar(self.cookies)))
-        except (FileNotFoundError,JSONDecodeError) as e:
+        except (FileNotFoundError, JSONDecodeError) as e:
             raise SessionException(f'ошибка сохранения данных сессии на диск {e}')
 
     def __load(self):
@@ -155,6 +161,6 @@ class Session(ReqSession):
         try:
             with open(self.cookiejar_file, 'r') as f:
                 self.cookies = cookiejar_from_dict(json.loads(f.read()))
-        except (FileExistsError,JSONDecodeError) as e:
+        except (FileExistsError, JSONDecodeError) as e:
             raise SessionException(f'ошибка чтения файла с данными сессии {e}')
         return True

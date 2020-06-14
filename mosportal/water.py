@@ -1,6 +1,7 @@
 import logging
 from mosportal.account import Account
 from datetime import datetime
+from typing import Union, Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class Meter:
             counterId=rj['counterId'],
             meter_id=rj['num'][1:],
             value=value,
-            name=f'{"Горячая вода" if rj["type"] == 1 else "Холодная вода"} ({rj["num"]})',
+            name=f'{"Холодная вода" if rj["type"] == 1 else "Горячая вода"} ({rj["num"]})',
             update_date=update_date,
             checkup=datetime.strptime(rj['checkup'][:-6], '%Y-%m-%d'),
             consumption=consumption,
@@ -76,7 +77,14 @@ class Meter:
         )
 
     @staticmethod
-    def __get_current_val(indicator):
+    def __get_current_val(indicator) -> Union[float, datetime, int, Union[list, Dict[str,str]]]:
+        """
+        получение текущих значний
+        :param indicator: значение с портала
+        :return: текущиее показание счетчика, дата передачи показаний,
+        расход воды, список переданных значений за три месяца
+        :rtype: (float, datetime, int, list)
+        """
         value_list = []
         if type(indicator) is list:
             value_list = indicator
@@ -115,4 +123,4 @@ class Meter:
             logger.debug('запрос успешно выполнен %s set value: %s' % (self.meter_id, self.cur_val))
             return True
         else:
-            raise WaterException('%s'%rj.get('error', rj))
+            raise WaterException('%s' % rj.get('error', rj))
