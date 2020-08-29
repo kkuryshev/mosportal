@@ -63,7 +63,10 @@ class Meter:
 
     @classmethod
     def parse(cls, rj, water):
-        value, update_date, consumption, history_list = cls.__get_current_val(rj['indications'])
+        if 'indications' not in rj:
+            value, update_date, consumption, history_list = (None, None, None, [])
+        else:
+            value, update_date, consumption, history_list = cls.__get_current_val(rj['indications'])
         return cls(
             counterId=rj['counterId'],
             meter_id=rj['num'][1:],
@@ -77,7 +80,7 @@ class Meter:
         )
 
     @staticmethod
-    def __get_current_val(indicator) -> Union[float, datetime, int, Union[list, Dict[str,str]]]:
+    def __get_current_val(indicator) -> Union[float, datetime, int, Union[list, Dict[str, str]]]:
         """
         получение текущих значний
         :param indicator: значение с портала
