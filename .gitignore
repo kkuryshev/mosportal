@@ -1,0 +1,10 @@
+.idea
+.vscode
+build
+dist
+mosportal/__pycache__
+mosportal.egg-info
+tests
+.env
+.mosportal_cookie
+MANIFEST

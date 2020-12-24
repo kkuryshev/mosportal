@@ -1,4 +1,5 @@
 import logging
+from requests import cookies
 from requests import Session as ReqSession
 from requests.utils import dict_from_cookiejar, cookiejar_from_dict
 from requests.exceptions import BaseHTTPError
@@ -6,7 +7,7 @@ from json import JSONDecodeError
 import json
 import re
 from os.path import join, exists
-
+from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
@@ -16,7 +17,6 @@ class SessionException(BaseException):
 
 class InvalidSession(SessionException):
     pass
-
 
 class Session(ReqSession):
     def __init__(self, login, password, **kwargs):
@@ -36,50 +36,89 @@ class Session(ReqSession):
                 return
             session = super(Session, self)
             logger.debug('попытка чистой авторизации (без сохраненных куки)...')
-            resp = session.get('https://www.mos.ru/api/acs/v1/login?back_url=https%3A%2F%2Fwww.mos.ru%2F')
+            resp = session.get('https://stats.mos.ru/eds.gif',
+                headers = self.__get_header(),
+                params = {
+                    "eventType":"home_page",
+                    "eventDst":"stats",
+                    "eventSrc":"mos.ru",
+                    "eventObject":{"Главная":{"Поиск":"view"}},
+                    "eventTime":datetime.now().microsecond,
+                    "mosId":None
+                }
+            )
+            resp = session.get('https://www.mos.ru/api/acs/v1/login?back_url=https%3A%2F%2Fwww.mos.ru%2F',headers=self.__get_header())
             js = re.search(r'<script charset=\"utf-8\" src=\"(.+?)\"><\/script>', str(resp.content)).group(1)
             logger.debug(f'получили код {js}')
-            resp = session.get(f'https://login.mos.ru{js}')
+
+            resp = session.get(f'https://login.mos.ru{js}',headers=self.__get_header())
             js = re.search(r'COORDS:\"/(.+?)\"', str(resp.content)).group(1)
             logger.debug(f'получили COORDS {js}')
-            session.post(f'https://login.mos.ru/{js}')
+            #-->
+
+            resp = session.get('https://login.mos.ru/sps/login/methods/password',
+                headers=self.__get_header({
+                    "referer": "https://login.mos.ru/sps/login/methods/password",
+                    "origin":"https://login.mos.ru",
+                    "content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                    "host": "login.mos.ru",
+                    "accept":"text/css,*/*;q=0.1",
+                })
+            )
+            csrftokenw = re.search(r"meta name='csrf-token-value' content='(.+?)'\/>", resp.text).group(1)
+            cid = re.search(r'session_promise|(\d+)|find',resp.text).group(1)
+            
+            resp = session.get(f'https://mstat.gosuslugi.ru/oxwdsq?cid={cid}',
+                headers=self.__get_header({
+                    "referer": "https://login.mos.ru/sps/login/methods/password",
+                    "origin":"https://login.mos.ru",
+                    "sec-ch-ua":"\"Google Chrome\";v=\"87\", \" Not;A Brand\";v=\"99\", \"Chromium\";v=\"87\"",
+                    "sec-ch-ua-mobile":"?0",
+                    "Referer":"https://login.mos.ru/",
+                    "accept":"text/css,*/*;q=0.1",
+                })
+            )
+            id1,id2,id3 = re.search(r'window\.kfp\.jsonp_oxwdsq\(\{ "id":"(.+?)", "e":"(\d+?)", "t":"(\d+?)"', resp.text).groups()
+            cookie = cookies.create_cookie(domain='.mos.ru',name='oyystart',value=f'{id1}_1')
+            self.cookies.set_cookie(cookie)
+            cookie = cookies.create_cookie(domain='.mos.ru',name='oxxfgh',value=f'{id1}#2#{id2}#{id3}#600000')
+            self.cookies.set_cookie(cookie)
+            #<---
+            session.post(f'https://login.mos.ru/{js}',headers=self.__get_header())
+
             logger.debug(f'переходим к аутентификации')
             resp = session.post(
                 url="https://login.mos.ru/sps/login/methods/password",
-                headers={
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Encoding": "gzip, deflate, br",
+                headers=self.__get_header({
+                    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "accept-Encoding": "gzip, deflate, br",
                     "Connection": "keep-alive",
-                    "Referer": "https://login.mos.ru/sps/login/methods/password",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Host": "login.mos.ru",
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0",
-                    "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
-                    "Upgrade-Insecure-Requests": "1",
-                },
+                    "referer": "https://login.mos.ru/sps/login/methods/password",
+                    "origin":"https://login.mos.ru",
+                    "content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                    "host": "login.mos.ru",
+                    "accept":"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+                }),
                 data={
+                    "isDelayed":"false",
                     "login": self.login,
                     "password": self.password,
+                    "csrftokenw":csrftokenw,
+                    "alien":"false"
                 },
                 allow_redirects=False
             )
             logger.debug(f"переходим на адрес, который вернул запрос аутентификации {resp.headers.get('location')}")
             session.get(
                 resp.headers.get('location'),
-                headers={
-                    "sec-fetch-dest": "document",
-                    "sec-fetch-mode": "navigate",
-                    "sec-fetch-site": "same-site",
-                    "sec-fetch-user": "?1",
-                    "Upgrade-Insecure-Requests": "1"
-                }
+                headers=self.__get_header()
             )
             self.__save()
             if not self.authenticated():
                 raise SessionException('аутентификация прошла успешно но сессия осталась не валидной')
             self.__init_est = True
             logger.debug("авторизация на портале Москвы прошла успешно!")
-        except BaseHTTPError as e:
+        except BaseException as e:
             raise SessionException(f'ошибка авторизации на портале Москвы: {e}')
 
     def post(self, url, data=None, **kwargs):
@@ -164,3 +203,22 @@ class Session(ReqSession):
         except (FileExistsError, JSONDecodeError) as e:
             raise SessionException(f'ошибка чтения файла с данными сессии {e}')
         return True
+
+    def __get_header(self,header:dict=None) -> dict:
+        if not header: 
+            header = {}
+        
+        header.update({
+            "pragma":"no-cache",
+            "cache-control":"no-cache",
+            "accept-Encoding": "gzip, deflate, br",
+            "user-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0",
+            "accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
+            "Upgrade-Insecure-Requests": "1",
+            "sec-fetch-site":"same-origin",
+            "sec-fetch-mode":"navigate",
+            "sec-fetch-user":"?1",
+            "sec-fetch-dest":"document",
+        })
+
+        return header
