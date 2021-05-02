@@ -34,6 +34,7 @@ class Session(ReqSession):
             if self.authenticated():
                 self.__init_est = True
                 return
+            self.cookies.clear()
             session = super(Session, self)
             logger.debug('попытка чистой авторизации (без сохраненных куки)...')
             resp = session.get('https://stats.mos.ru/eds.gif',
@@ -108,6 +109,9 @@ class Session(ReqSession):
                 },
                 allow_redirects=False
             )
+            if resp.headers.get('location') == None:
+                raise SessionException('аутентификация провалилась, так как УЗ заблокирована')
+
             logger.debug(f"переходим на адрес, который вернул запрос аутентификации {resp.headers.get('location')}")
             session.get(
                 resp.headers.get('location'),
@@ -172,6 +176,8 @@ class Session(ReqSession):
             return
         if not response.headers.get('x-session-fingerprint', None):
             return
+
+        self.__save()
 
         return True
 
