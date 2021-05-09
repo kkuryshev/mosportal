@@ -25,15 +25,12 @@ class Session(ReqSession):
         self.cookie_save_path = kwargs.get('cookie_save_path', None)
         self.token = None
         self.id_profile = None
-        self.__init_est = False
+        self.__refresh_date = None
 
         super(Session, self).__init__()
 
     def __establish(self) -> None:
         try:
-            if self.authenticated():
-                self.__init_est = True
-                return
             self.cookies.clear()
             session = super(Session, self)
             logger.debug('попытка чистой авторизации (без сохраненных куки)...')
@@ -117,10 +114,10 @@ class Session(ReqSession):
                 resp.headers.get('location'),
                 headers=self.__get_header()
             )
-            self.__save()
+
             if not self.authenticated():
                 raise SessionException('аутентификация прошла успешно но сессия осталась не валидной')
-            self.__init_est = True
+            self.__refresh_date = datetime.now()
             logger.debug("авторизация на портале Москвы прошла успешно!")
         except BaseException as e:
             raise SessionException(f'ошибка авторизации на портале Москвы: {e}')
@@ -165,8 +162,6 @@ class Session(ReqSession):
         raise SessionException('ошибка выполнения запроса')
 
     def authenticated(self):
-        if not self.__load():
-            return
 
         response = super(Session, self).get(
             'https://www.mos.ru/api/oauth20/v1/frontend/json/ru/process/enter?redirect='
@@ -177,38 +172,12 @@ class Session(ReqSession):
         if not response.headers.get('x-session-fingerprint', None):
             return
 
-        self.__save()
-
         return True
 
     @property
-    def cookiejar_file(self):
-        if not self.cookie_save_path:
-            return
-        return join(self.cookie_save_path, '.mosportal_cookie')
+    def __init_est(self):
+        return self.__refresh_date and (datetime.now().tim - self.__refresh_date).total_seconds() < 172800
 
-    def __save(self):
-        if not self.cookiejar_file:
-            return
-        try:
-            with open(self.cookiejar_file, 'w') as f:
-                f.write(json.dumps(dict_from_cookiejar(self.cookies)))
-        except (FileNotFoundError, JSONDecodeError) as e:
-            raise SessionException(f'ошибка сохранения данных сессии на диск {e}')
-
-    def __load(self):
-        if not self.cookiejar_file:
-            return
-
-        if not exists(self.cookiejar_file):
-            return
-
-        try:
-            with open(self.cookiejar_file, 'r') as f:
-                self.cookies = cookiejar_from_dict(json.loads(f.read()))
-        except (FileExistsError, JSONDecodeError) as e:
-            raise SessionException(f'ошибка чтения файла с данными сессии {e}')
-        return True
 
     def __get_header(self,header:dict=None) -> dict:
         if not header: 
