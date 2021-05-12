@@ -176,7 +176,7 @@ class Session(ReqSession):
 
     @property
     def __init_est(self):
-        return self.__refresh_date and (datetime.now() - self.__refresh_date).total_seconds() < 172800
+        return self.__refresh_date and (datetime.now() - self.__refresh_date).total_seconds() < 7200
 
 
     def __get_header(self,header:dict=None) -> dict:
