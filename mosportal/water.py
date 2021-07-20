@@ -69,7 +69,7 @@ class Meter:
             value, update_date, consumption, history_list = cls.__get_current_val(rj['indications'])
         return cls(
             counterId=rj['counterId'],
-            meter_id=rj['num'][1:],
+            meter_id=rj['num'] if rj['num'][0].isdigit() else rj['num'][1:],
             value=value,
             name=f'{"Холодная вода" if rj["type"] == 1 else "Горячая вода"} ({rj["num"]})',
             update_date=update_date,
