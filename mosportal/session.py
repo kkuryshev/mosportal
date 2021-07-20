@@ -197,3 +197,13 @@ class Session(ReqSession):
         })
 
         return header
+    
+    def logout(self):
+        self.__refresh_date = None
+        resp = super(Session, self).get('https://www.mos.ru/api/acs/v1/logout',
+                headers = self.__get_header(),
+                params = {
+                    "back_url":"https://www.mos.ru/uslugi/",
+                }
+            )
+        print(resp)
